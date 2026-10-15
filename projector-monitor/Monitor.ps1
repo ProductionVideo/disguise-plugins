@@ -1,4 +1,4 @@
-param([int]$HttpPort=18745,[switch]$TestMode)
+param([int]$HttpPort=18745,[int]$OwnerPid=0,[switch]$TestMode)
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Security
 . (Join-Path $PSScriptRoot 'Slot.ps1')
@@ -12,6 +12,12 @@ if(Test-Path $networkFile){$network=Get-Content $networkFile -Raw|ConvertFrom-Js
 $allowed=@($network.allowedClients)
 $listener=New-Object Net.HttpListener
 $running=$true
+$pidFile=Join-Path $PSScriptRoot 'helper.pid'
+# When Designer starts the helper it passes its own process ID; the helper exits with it. Manual starts run until Stop.
+$owner=$null
+if($OwnerPid){try{$owner=Get-Process -Id $OwnerPid}catch{exit}}
+$ownerCheck=[DateTime]::UtcNow
+function Owner-Exited{try{return $owner.HasExited}catch{return -not (Get-Process -Id $OwnerPid -ErrorAction SilentlyContinue)}}
 function Persist($view,$items){
  $data=@{version=2;view=$view;projectors=@($items|ForEach-Object {@{id=$_.id;config=$_.config}})}|ConvertTo-Json -Depth 8
  [IO.File]::WriteAllText($fleetPath+'.tmp',$data,(New-Object Text.UTF8Encoding($false)))
@@ -44,7 +50,9 @@ if(Test-Path $fleetPath){
 $listener.Prefixes.Add("http://localhost:$HttpPort/")
 if(!$TestMode -and $network.bindAddress){$listener.Prefixes.Add("http://$($network.bindAddress):$HttpPort/")}
 $listener.Start();$pending=$listener.GetContextAsync()
+if(!$TestMode){[IO.File]::WriteAllText($pidFile,[string]$PID)}
 try{while($running){
+ if($owner -and [DateTime]::UtcNow -ge $ownerCheck){$ownerCheck=[DateTime]::UtcNow.AddSeconds(2);if(Owner-Exited){break}}
  if(!$TestMode){foreach($slot in $script:slots){Update-Projector $slot}}
  if(!$pending.IsCompleted){Start-Sleep -Milliseconds 30;continue}
  $ctx=$pending.GetAwaiter().GetResult();$pending=$listener.GetContextAsync();$req=$ctx.Request;$path=$req.Url.AbsolutePath
@@ -52,7 +60,7 @@ try{while($running){
   if(![Net.IPAddress]::IsLoopback($req.RemoteEndPoint.Address) -and $req.RemoteEndPoint.Address.ToString() -notin $allowed){Reply $ctx 403 '{"error":"Access denied"}';continue}
   if($req.HttpMethod -eq 'GET' -and $path -eq '/api/status'){
    $public=@(foreach($slot in $script:slots){@{id=$slot.id;config=(Public-Config $slot);status=$slot.status;checking=[bool]$slot.worker;control=$slot.control}})
-   Reply $ctx 200 (@{app='disguise-projector-monitor-v2';view=$script:view;projectors=$public}|ConvertTo-Json -Depth 9 -Compress);continue
+   Reply $ctx 200 (@{app='disguise-projector-monitor-v2';pid=$PID;owner=$OwnerPid;view=$script:view;projectors=$public}|ConvertTo-Json -Depth 9 -Compress);continue
   }
   if($req.HttpMethod -eq 'POST'){
    $origins=@("http://localhost:$HttpPort")
@@ -108,4 +116,7 @@ try{while($running){
   }
   Reply $ctx 404 '{"error":"Not found"}'
  }catch{try{Reply $ctx 400 (@{error=$_.Exception.Message}|ConvertTo-Json -Compress)}catch{}}
-}}finally{$listener.Close();foreach($slot in $script:slots){Stop-Slot $slot}}
+}}finally{
+ $listener.Close();foreach($slot in $script:slots){Stop-Slot $slot}
+ try{if((Get-Content $pidFile -ErrorAction Stop) -eq [string]$PID){Remove-Item $pidFile}}catch{}
+}
