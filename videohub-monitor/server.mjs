@@ -7,7 +7,9 @@ if(settings.host&&!net.isIPv4(settings.host))throw Error('Invalid saved IP');
 let state=emptyState(),connection='offline',error='',stop,busy=false;const requests=new Map();
 function audit(event){const file=path.join(folder,'routing-audit.ndjson');if(fs.existsSync(file)&&fs.statSync(file).size>5e6)fs.renameSync(file,file+'.previous');fs.appendFileSync(file,JSON.stringify({at:new Date().toISOString(),...event})+'\n');}
 function connect(){stop?.();state=emptyState();connection=settings.host?'connecting':'offline';error='';if(settings.host)stop=connectMonitor({host:settings.host,protocol:'videohub',onState:s=>state=s,onConnection:(c,e)=>{connection=c;error=e},audit:()=>{}});}
-function payload(){return {app:config.id,version:2,title:'Videohub Monitor',...state,connection,error,settings,busy};}
+// When Designer starts the helper it passes --owner=<its process ID>; the helper exits with it. Manual starts run until Stop.
+const owner=Number(process.argv.find(a=>a.startsWith('--owner='))?.slice(8))||0;
+function payload(){return {app:config.id,version:2,pid:process.pid,owner,title:'Videohub Monitor',...state,connection,error,settings,busy};}
 const files={'/':'index.html','/settings':'index.html','/app.js':'app.js','/style.css':'style.css'};
 function visible(list,ports){return list===null?ports.map(p=>p.number):list;}
 const allowedHosts=new Set(['localhost','127.0.0.1',...(config.allowedHosts||[])]);
@@ -56,4 +58,7 @@ const server=http.createServer(async(req,res)=>{
  const file=files[pathname];res.writeHead(200,{'Content-Type':file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html','Cache-Control':'no-store','Content-Security-Policy':"default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'"});res.end(fs.readFileSync(path.join(folder,file)));
  }catch(e){json(400,{error:e.message});}
 });
-server.requestTimeout=10000;server.headersTimeout=10000;server.listen(config.port,config.bind||'127.0.0.1',connect);server.on('error',e=>{console.error(e);process.exit(1)});process.on('SIGTERM',()=>{stop?.();server.close(()=>process.exit())});
+server.requestTimeout=10000;server.headersTimeout=10000;server.listen(config.port,config.bind||'127.0.0.1',connect);server.on('error',e=>{console.error(e);process.exit(1)});function shutdown(){stop?.();server.close(()=>process.exit());setTimeout(()=>process.exit(),2000).unref();}
+process.on('SIGTERM',shutdown);
+// Signal 0 only tests that the process exists; EPERM means it exists but belongs to another user.
+if(owner)setInterval(()=>{try{process.kill(owner,0)}catch(e){if(e.code==='ESRCH')shutdown();}},2000).unref();

@@ -1,3 +1,3 @@
-$server=(Join-Path $PSScriptRoot 'server.mjs').ToLowerInvariant()
-$native=(Join-Path $PSScriptRoot 'Serve.ps1').ToLowerInvariant()
-Get-CimInstance Win32_Process | Where-Object {($_.Name -eq 'node.exe' -or $_.Name -eq 'powershell.exe') -and $_.CommandLine -and ($_.CommandLine.ToLowerInvariant().Contains($server) -or $_.CommandLine.ToLowerInvariant().Contains($native))} | ForEach-Object {Stop-Process -Id $_.ProcessId}
+# Ends this folder's helper, found by command line so a hung helper is stopped too.
+$server=Join-Path $PSScriptRoot 'Serve.ps1'
+Get-CimInstance Win32_Process -Filter "Name='powershell.exe'"|Where-Object {$_.CommandLine -and $_.CommandLine.IndexOf($server,[StringComparison]::OrdinalIgnoreCase) -ge 0}|ForEach-Object {Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue}

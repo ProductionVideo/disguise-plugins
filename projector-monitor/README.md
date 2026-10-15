@@ -21,6 +21,4 @@ On client machines, install a folder containing only a `d3plugin.json` pointing 
 
 ## Installation
 
-Copy this folder into your Designer project `plugins` directory, or the shared `d3 Projects/common/plugins` directory. Run `Start.cmd`, then open it in the Plugins launcher. `Open-in-Designer.cmd` is an alternative. Use `Stop.cmd` before updating or moving the helper.
-
-When Designer starts the helper on project load, the helper stops by itself within a few seconds of Designer exiting. A helper started with `Start.cmd` keeps running until `Stop.cmd`. Start replaces a helper left over from another plugin folder or older version, and ends one that has stopped responding. Stop ends the helper even if it is unresponsive. Existing `fleet.json` files from 1.0.0 load unchanged as Panasonic projectors.
+Copy this folder into your Designer project `plugins` directory, or the shared `d3 Projects/common/plugins` directory. Run `Start.cmd`, then open it in the Plugins launcher. `Open-in-Designer.cmd` is an alternative. Use `Stop.cmd` before updating or moving the helper. A helper started by Designer stops when Designer exits. Existing `fleet.json` files from 1.0.0 load unchanged as Panasonic projectors.

@@ -1,4 +1,10 @@
+param([int]$OwnerPid=0)
 $ErrorActionPreference='Stop'
+# When Designer starts the helper it passes its own process ID; the helper exits with it. Manual starts run until Stop.
+$owner=$null
+if($OwnerPid){try{$owner=Get-Process -Id $OwnerPid}catch{exit}}
+$ownerCheck=[DateTime]::UtcNow
+function Owner-Exited{try{return $owner.HasExited}catch{return -not (Get-Process -Id $OwnerPid -ErrorAction SilentlyContinue)}}
 $listener=New-Object System.Net.HttpListener
 $listener.Prefixes.Add('http://127.0.0.1:18753/')
 $zones=Get-Content (Join-Path $PSScriptRoot 'timezones.json') -Raw|ConvertFrom-Json
@@ -8,7 +14,10 @@ function Valid($c){return ($null -ne $c -and $sizes.ContainsKey([string]$c.size)
 function Settings {try{$c=Get-Content $settingsFile -Raw|ConvertFrom-Json;if(Valid $c){return $c}}catch{};return @{size='compact';zones=@('Asia/Tokyo','Europe/London','America/New_York')}}
 $listener.Start()
 try {while($listener.IsListening){
- $ctx=$listener.GetContext();$res=$ctx.Response;$req=$ctx.Request;$res.Headers.Add('Cache-Control','no-store');$res.ContentType='application/json; charset=utf-8'
+ # Wait in short steps so the owner is checked every 2 seconds, busy or idle.
+ $next=$listener.GetContextAsync()
+ do{if($owner -and [DateTime]::UtcNow -ge $ownerCheck){$ownerCheck=[DateTime]::UtcNow.AddSeconds(2);if(Owner-Exited){return}}}until($next.Wait(1000))
+ $ctx=$next.Result;$res=$ctx.Response;$req=$ctx.Request;$res.Headers.Add('Cache-Control','no-store');$res.ContentType='application/json; charset=utf-8'
  try {
   $path=$req.Url.AbsolutePath;$content=$null
   if($path -eq '/api/fit' -and $req.HttpMethod -eq 'POST'){
@@ -29,7 +38,7 @@ try {while($listener.IsListening){
     else{$data=@{size=$body.size;zones=@($body.zones)}|ConvertTo-Json -Compress;[IO.File]::WriteAllText($settingsFile+'.tmp',$data,(New-Object Text.UTF8Encoding($false)));Move-Item -LiteralPath ($settingsFile+'.tmp') -Destination $settingsFile -Force;$content='{"ok":true}'}
    }
   }elseif($req.HttpMethod -ne 'GET'){$res.StatusCode=405;$content='{"error":"Method not allowed"}'}
-  elseif($path -eq '/api/state'){$content='{"app":"world-clock"}'}
+  elseif($path -eq '/api/state'){$content=@{app='world-clock';pid=$PID;owner=$OwnerPid}|ConvertTo-Json -Compress}
   elseif($path -eq '/api/settings'){$content=Settings|ConvertTo-Json -Compress}
   elseif($path -eq '/' -or $path -eq '/settings'){
    $c=Settings;$s=$sizes[$c.size];$dim=if($path -eq '/settings'){'360,410'}else{[string]$s[0]+','+[string]($c.zones.Count*$s[1]+($c.zones.Count-1)*4+40)}

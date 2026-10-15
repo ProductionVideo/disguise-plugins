@@ -16,7 +16,7 @@ Four independent Windows plugins for Disguise Designer. Install only the folders
 3. Run its `Start.cmd`, then open Designer's **Plugins** launcher. `Open-in-Designer.cmd` opens the local panel directly when Designer is running.
 4. Open **Settings** and enter your own devices. No show configuration or credentials are included.
 
-Designer can load each folder's Python startup hook on project launch. Helpers run as separate Windows processes. Use `Stop.cmd` to stop a helper; closing its panel does not stop it. Restarting the project or running Start starts it again.
+Designer can load each folder's Python startup hook on project launch. Helpers run as separate Windows processes. A helper started by Designer stops by itself within a few seconds of Designer exiting; one started with `Start.cmd` runs until `Stop.cmd`. Closing a panel does not stop its helper. Start replaces a leftover or unresponsive helper from the same folder and confirms the new one is answering; Stop ends a helper even if it is unresponsive.
 
 Keep a backup of your configuration before updating. Stop the helper, replace code files, retain locally generated JSON settings, then start it again. Projector passwords are protected for the Windows user and machine that saved them; re-enter them after moving hosts.
 

@@ -1,4 +1,4 @@
-param([int]$HttpPort=18743)
+param([int]$HttpPort=18743,[int]$OwnerPid=0)
 # Windows PowerShell 5.1; ping monitoring runs outside Designer.
 $ErrorActionPreference = 'Stop'
 $viewPath=Join-Path $PSScriptRoot 'view.json'
@@ -12,6 +12,11 @@ $script:jobs = @()
 $script:generation = 0
 $script:nextCheck = [DateTime]::UtcNow
 $script:running = $true
+# When Designer starts the helper it passes its own process ID; the helper exits with it. Manual starts run until Stop.
+$owner = $null
+if ($OwnerPid) { try { $owner = Get-Process -Id $OwnerPid } catch { exit } }
+$ownerCheck = [DateTime]::UtcNow
+function Owner-Exited { try { return $owner.HasExited } catch { return -not (Get-Process -Id $OwnerPid -ErrorAction SilentlyContinue) } }
 $listener = New-Object System.Net.HttpListener
 
 function Validate-Devices($items) {
@@ -105,6 +110,7 @@ try {
     $listener.Start()
     $pending = $listener.GetContextAsync()
     while ($script:running) {
+        if ($owner -and [DateTime]::UtcNow -ge $ownerCheck) { $ownerCheck = [DateTime]::UtcNow.AddSeconds(2); if (Owner-Exited) { break } }
         Update-Pings
         if (-not $pending.IsCompleted) { Start-Sleep -Milliseconds 30; continue }
         $context = $pending.GetAwaiter().GetResult()
@@ -116,7 +122,7 @@ try {
                 Send-Response $context 403 '{"error":"Local access only."}'; continue
             }
             if ($request.HttpMethod -eq 'GET' -and $path -eq '/api/status') {
-                Send-Response $context 200 (@{app='disguise-device-monitor-v2'; view=$script:view; devices=$script:results; intervalSeconds=10; serverTime=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json -Depth 5 -Compress)
+                Send-Response $context 200 (@{app='disguise-device-monitor-v2'; pid=$PID; owner=$OwnerPid; view=$script:view; devices=$script:results; intervalSeconds=10; serverTime=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json -Depth 5 -Compress)
             } elseif ($request.HttpMethod -eq 'POST' -and $path -in @('/api/devices','/api/check','/api/stop','/api/view','/api/fit')) {
                 $origin = $request.Headers['Origin']
                 if ($request.Headers['X-Device-Monitor'] -ne '1' -or ($origin -and $origin -ne "http://localhost:$HttpPort")) {

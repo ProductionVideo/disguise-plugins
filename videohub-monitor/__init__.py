@@ -22,7 +22,9 @@ def start_monitor():
     startup.wShowWindow = 0
     with open(os.path.join(folder, 'startup.log'), 'ab') as log:
         subprocess.Popen([powershell, '-NoProfile', '-ExecutionPolicy', 'Bypass',
-                          '-WindowStyle', 'Hidden', '-File', launcher],
+                          '-WindowStyle', 'Hidden', '-File', launcher,
+                          # Designer's own process ID: the helper stops when Designer exits.
+                          '-OwnerPid', str(os.getpid())],
                          cwd=folder, stdout=log, stderr=log,
                          startupinfo=startup, creationflags=0x08000000)
 
