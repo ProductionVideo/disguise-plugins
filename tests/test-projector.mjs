@@ -7,20 +7,21 @@ const md5=s=>crypto.createHash('md5').update(s).digest('hex');
 function run(args){const flat=Object.entries(args).map(([k,v])=>`-${k} '${String(v).replace(/'/g,"''")}'`).join(' ');return new Promise((r,j)=>execFile(shell,['-NoProfile','-Command',`& '${script}' ${flat} | ConvertTo-Json -Compress`],{timeout:30000},(e,out,err)=>e?j(Error(err||e.message)):r(JSON.parse(out))));}
 async function listen(server){await new Promise(r=>server.listen(0,'127.0.0.1',r));return server.address().port;}
 
-// Epson: ESC/VP21 over HTTP with Digest auth. Replies are "KEY=VALUE\r:", "\r:" for an accepted set, or "ERR\r:".
+// Epson: ESC/VP21 over HTTP with Digest auth. Like real hardware, replies are the bare value ("01"), empty for an accepted set, or "ERR".
 let state={},seen=[];
 const epson=http.createServer((req,res)=>{
  const url=new URL(req.url,'http://x'),auth=req.headers.authorization||'',f=Object.fromEntries([...auth.matchAll(/(\w+)="?([^",]*)"?/g)].map(m=>[m[1],m[2]]));
  const ha1=md5('EPSONWEB:EPSONWEB:secret'),ok=auth.startsWith('Digest ')&&f.response===md5(`${ha1}:${f.nonce}:${f.nc}:${f.cnonce}:${f.qop}:${md5(req.method+':'+f.uri)}`);
  if(!ok){res.writeHead(401,{'WWW-Authenticate':`Digest realm="EPSONWEB", nonce="${crypto.randomBytes(8).toString('hex')}", qop="auth", algorithm=MD5`});return res.end();}
  const cmd=url.searchParams.get('cmd');seen.push(cmd);const [key,arg]=cmd.split(/[ ?]/);
- if(cmd.endsWith('?'))return res.end(key in state?`${key}=${state[key]}\r:`:'ERR\r:');
- if(state.reject)return res.end('ERR\r:');state[key]=arg;res.end('\r:');
+ if(cmd.endsWith('?'))return res.end(key in state?(state.prefixed?`${key}=${state[key]}\r:`:state[key]):'ERR');
+ if(state.reject||!(key in state)&&key!=='PWR')return res.end('ERR');state[key]=arg;res.end('');
 });
 const ep=await listen(epson),base={Brand:'epson',Address:'127.0.0.1',Port:ep,Username:'EPSONWEB'};
 state={PWR:'01',ERR:'00',LAMP:'1234',SHUTTER:'OFF',SOURCE:'56',FREEZE:'OFF',SIGNAL:'01',SNO:'X5ABC123'};
 let r=await run({...base,Password:'secret'});
 assert.equal(r.connection,'online');assert.deepEqual([r.power,r.shutter,r.input,r.freeze,r.signal,r.fault,r.lightHours,r.serial,r.error],['On','Open','SDI 1','Off','Detected','None',1234,'X5ABC123','']);console.log('Epson status (on) passed');
+state={PWR:'01',ERR:'00',LAMP:'7',prefixed:true};r=await run({...base,Password:'secret'});assert.deepEqual([r.power,r.lightHours],['On',7]);console.log('Epson KEY=VALUE replies passed');
 state={PWR:'04',ERR:'00',LAMP:'1234'};seen=[];r=await run({...base,Password:'secret'});
 assert.equal(r.connection,'online');assert.equal(r.power,'Standby');assert.equal(r.input,null);assert.equal(r.shutter,null);assert.deepEqual(seen,['PWR?','ERR?','LAMP?']);console.log('Epson standby skips picture queries passed');
 state={PWR:'05',ERR:'04'};r=await run({...base,Password:'secret'});
@@ -29,6 +30,8 @@ r=await run({...base,Password:'wrong'});assert.equal(r.connection,'auth');assert
 r=await run({...base,Password:''});assert.equal(r.connection,'auth');assert.match(r.error,/Password required/);console.log('Epson authentication errors passed');
 state={SHUTTER:'OFF'};seen=[];r=await run({...base,Password:'secret',Action:'shutter-close'});
 assert.equal(r.ok,true);assert.deepEqual(seen,['SHUTTER ON']);assert.equal(state.SHUTTER,'ON');
+state={MUTE:'OFF'};seen=[];r=await run({...base,Password:'secret',Action:'shutter-close'});assert.equal(r.ok,true);assert.deepEqual(seen,['SHUTTER ON','MUTE ON']);
+state={PWR:'01',MUTE:'ON'};seen=[];r=await run({...base,Password:'secret'});assert.equal(r.shutter,'Closed');assert.deepEqual(seen.slice(3,5),['SHUTTER?','MUTE?']);console.log('Epson A/V mute fallback passed');
 seen=[];r=await run({...base,Password:'secret',Action:'power-on'});assert.equal(r.ok,true);assert.deepEqual(seen,['PWR ON']);
 state={reject:true};r=await run({...base,Password:'secret',Action:'power-off'});assert.equal(r.ok,false);assert.match(r.error,/rejected/);console.log('Epson controls passed');
 await new Promise(r=>epson.close(r));

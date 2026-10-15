@@ -3,7 +3,7 @@
 
 function Invoke-Escvp([string]$command) {
     # Explicit allowlist. The web UI cannot send arbitrary commands.
-    if ($command -notin @('PWR?','ERR?','LAMP?','SHUTTER?','SOURCE?','FREEZE?','SIGNAL?','SNO?','PWR ON','PWR OFF','SHUTTER ON','SHUTTER OFF')) { throw 'Command not allowed.' }
+    if ($command -notin @('PWR?','ERR?','LAMP?','SHUTTER?','MUTE?','SOURCE?','FREEZE?','SIGNAL?','SNO?','PWR ON','PWR OFF','SHUTTER ON','SHUTTER OFF','MUTE ON','MUTE OFF')) { throw 'Command not allowed.' }
     $uri=[Uri]("http://${Address}:$Port/api/v01/control/escvp21?cmd="+$command.Replace(' ','+'))
     $request=[Net.HttpWebRequest]::Create($uri)
     $request.Timeout=3000; $request.ReadWriteTimeout=3000; $request.AllowAutoRedirect=$false
@@ -28,10 +28,13 @@ function Invoke-Escvp([string]$command) {
         while ($length -lt $buffer.Length) { $read=$reader.Read($buffer,$length,$buffer.Length-$length); if ($read -le 0) { break }; $length+=$read }
         $body=[string]::new($buffer,0,$length)
     } finally { $response.Close() }
-    # Replies look like "PWR=01" followed by the ":" prompt. ERR means not supported in the current state.
+    # The HTTP API replies with the bare value ("01"); raw ESC/VP21 style "PWR=01:" is accepted too.
+    # ERR means unsupported, or unavailable in the current power state. A set command acknowledges with an empty reply.
+    $body=$body.Trim().TrimEnd(':').Trim()
     $key=$command.Split(' ?')[0]
-    if ($body -match "\b$key=([^\r\n:`"<]*)") { return $Matches[1].Trim() }
-    if ($body -match '\bERR\b') { return $null }
+    if ($body -match "^$key=(.*)$") { $body=$Matches[1].Trim() }
+    if ($body -eq 'ERR') { return $null }
+    if ($body -match '^[\w .:/+-]{0,64}$') { return $body }
     return ''
 }
 
@@ -43,7 +46,10 @@ function Find-Label($map,$value) {
 
 function Send-Control([string]$action) {
     $command=@{'power-on'='PWR ON';'power-off'='PWR OFF';'shutter-open'='SHUTTER OFF';'shutter-close'='SHUTTER ON'}[$action]
-    if ($null -eq (Invoke-Escvp $command)) { throw 'Projector rejected the command.' }
+    $reply=Invoke-Escvp $command
+    # Models without a mechanical shutter blank the picture with A/V mute instead.
+    if ($null -eq $reply -and $command -like 'SHUTTER *') { $reply=Invoke-Escvp $command.Replace('SHUTTER','MUTE') }
+    if ($null -eq $reply) { throw 'Projector rejected the command.' }
 }
 
 function Read-Status($result) {
@@ -58,7 +64,9 @@ function Read-Status($result) {
     if ($hours -match '^\d+$') { $result.lightHours=[long]$hours }
     # Picture and serial queries answer ERR outside the On state. That is expected, not a fault.
     if ($power -ne '01') { return }
-    $result.shutter=Find-Label @{'ON'='Closed';'01'='Closed';'OFF'='Open';'00'='Open'} (Invoke-Escvp 'SHUTTER?')
+    $shutter=Invoke-Escvp 'SHUTTER?'
+    if ($null -eq $shutter) { $shutter=Invoke-Escvp 'MUTE?' }
+    $result.shutter=Find-Label @{'ON'='Closed';'01'='Closed';'OFF'='Open';'00'='Open'} $shutter
     $result.input=Find-Label @{'10'='Computer 1';'1F'='Computer 2';'20'='Component';'21'='BNC';'30'='HDMI 1';'A0'='DVI-D';'40'='Video';'41'='S-Video';'52'='LAN';'53'='WirelessHD';'56'='SDI 1';'57'='SDI 2';'60'='SDI';'70'='Content Playback';'80'='HDBaseT'} (Invoke-Escvp 'SOURCE?')
     $result.freeze=Find-Label @{'ON'='On';'01'='On';'OFF'='Off';'00'='Off'} (Invoke-Escvp 'FREEZE?')
     $result.signal=Find-Label @{'00'='No signal';'01'='Detected';'FF'='Unsupported'} (Invoke-Escvp 'SIGNAL?')
