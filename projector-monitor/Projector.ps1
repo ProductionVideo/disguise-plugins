@@ -26,7 +26,11 @@ try {
     if ($message -match 'Login rejected|Password required') {$result.connection='auth'; $result.error=$message}
     elseif ($message -match 'Unsupported projector authentication') {$result.connection='error'; $result.error=$message}
     elseif ($result.connection -eq 'online') {$result.connection='partial'; $result.error='Incomplete status. Retrying.'}
-    else {$result.connection='offline'; $result.error='No response on control port '+$Port+'.'}
+    else {
+        # Report the innermost cause (timeout, refused, unreachable) so failures can be diagnosed from the card.
+        $cause=$_.Exception; while ($cause.InnerException) { $cause=$cause.InnerException }
+        $result.connection='offline'; $result.error='No response on control port '+$Port+': '+($cause.Message -replace '\s+',' ').Trim()
+    }
 } finally { $Password=$null }
 $result.checkedAt=[DateTime]::UtcNow.ToString('o')
 return $result

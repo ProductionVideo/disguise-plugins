@@ -7,6 +7,8 @@ function Invoke-Escvp([string]$command) {
     $uri=[Uri]("http://${Address}:$Port/api/v01/control/escvp21?cmd="+$command.Replace(' ','+'))
     $request=[Net.HttpWebRequest]::Create($uri)
     $request.Timeout=3000; $request.ReadWriteTimeout=3000; $request.AllowAutoRedirect=$false
+    # Projectors are on the local network; never route through the Windows system proxy.
+    $request.Proxy=$null
     if ($Password) {
         # Digest only, so the password is never sent in clear text over HTTP.
         $credentials=New-Object Net.CredentialCache
