@@ -3,7 +3,8 @@ $ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.Security
 . (Join-Path $PSScriptRoot 'Slot.ps1')
 $fleetPath=Join-Path $PSScriptRoot 'fleet.json'
-$sizes=@{compact=@(230,114);standard=@(280,142);large=@(330,166)}
+# [card width, card height, page padding + footer]. Card heights mirror --card in style.css.
+$sizes=@{mini=@(190,90,35);compact=@(230,128,40);standard=@(280,164,40);large=@(330,194,40)}
 # Optional shared hosting. Default is loopback only.
 $network=@{bindAddress='';allowedClients=@()}
 $networkFile=Join-Path $PSScriptRoot 'network.json'
@@ -18,7 +19,7 @@ function Persist($view,$items){
   try{if(Test-Path $fleetPath){[IO.File]::Replace($fleetPath+'.tmp',$fleetPath,[NullString]::Value)}else{[IO.File]::Move($fleetPath+'.tmp',$fleetPath)};break}catch{if($attempt -eq 4){throw};Start-Sleep -Milliseconds 100}
  }
 }
-function Dimensions($settings=$false){if($settings){return @(620,600)};$s=$sizes[$script:view.size];$cols=[Math]::Min([int]$script:view.columns,$script:slots.Count);$rows=[Math]::Ceiling($script:slots.Count/$cols);return @([int]($cols*$s[0]+($cols-1)*4+12),[int]($rows*$s[1]+($rows-1)*4+44))}
+function Dimensions($settings=$false){if($settings){return @(620,600)};$s=$sizes[$script:view.size];$cols=[Math]::Min([int]$script:view.columns,$script:slots.Count);$rows=[Math]::Ceiling($script:slots.Count/$cols);return @([int]($cols*$s[0]+($cols-1)*4+12),[int]($rows*$s[1]+($rows-1)*4+$s[2]))}
 function Reply($ctx,$code,$body,$type='application/json; charset=utf-8'){
  $bytes=[Text.Encoding]::UTF8.GetBytes($body);$ctx.Response.StatusCode=$code;$ctx.Response.ContentType=$type;$ctx.Response.Headers['Cache-Control']='no-store'
  $ctx.Response.Headers['X-Content-Type-Options']='nosniff';$ctx.Response.Headers['Content-Security-Policy']="default-src 'self'; script-src 'self'; style-src 'self'; base-uri 'none'; form-action 'self'"

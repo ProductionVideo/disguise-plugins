@@ -1,6 +1,6 @@
 # Projector Monitor
 
-Panasonic and Epson network status with power and shutter control. Add up to 12 projectors, mixing brands freely, choose one/two/four columns, and choose Compact, Standard or Large. Device support depends on the model and enabled network-control interface.
+Panasonic and Epson network status with power and shutter control. Add up to 12 projectors, mixing brands freely, choose one/two/four columns, and choose Very compact, Compact, Standard or Large. Very compact shows only names, state and controls; click a name to open its status. Device support depends on the model and enabled network-control interface.
 
 Requires Windows PowerShell 5.1. Open http://localhost:18745/. Enter brand, name, IPv4 address, port, username and password in Settings. Start with one blank projector. Configuration is stored in `fleet.json`; passwords use Windows DPAPI CurrentUser protection.
 
@@ -9,9 +9,9 @@ Requires Windows PowerShell 5.1. Open http://localhost:18745/. Enter brand, name
 | Panasonic | NTCONTROL over TCP | 1024 | `dispadmin` |
 | Epson | ESC/VP21 over the projector's HTTP control API (`/api/v01/control/escvp21`), Digest authentication | 80 | `EPSONWEB` |
 
-For Epson, enable web control on the projector. Use its Web Control password. Leave the password blank if none is set. Choose a Standby Mode that keeps network communication on, or the projector cannot be powered on remotely. Epson projectors answer most queries only when on. In standby the card shows power and faults, and the other readings are hidden until the projector is on.
+For Epson, enable web control on the projector. Use its Web Control password. Leave the password blank if none is set. If a password is set and login fails, set the projector's web control authentication to open. Choose a Standby Mode that keeps network communication on, or the projector cannot be powered on remotely. Epson projectors answer most queries only when on. In standby the card shows power and faults, and the other readings are hidden until the projector is on.
 
-Readings show only values the projector reports. Panasonic reports model, temperatures, projector hours and firmware. Epson reports signal and fault. Both report input, freeze, serial and light hours where supported.
+Status (the card's Status button, or click the name) shows only values the projector reports. Panasonic reports model, temperatures, projector hours and firmware. Epson reports signal and fault. Both report input, freeze, serial and light hours where supported.
 
 ## Shared hosting
 
